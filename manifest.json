@@ -1,6 +1,6 @@
 {
   "name": "Firebase Admin Panel",
-  "short_name": "AdminPanel",
+  "short_name": "AdminPanelNew",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#ffffff",
