@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Firebase Admin PWA</title>
+<link rel="manifest" href="manifest.json">
+<style>
+body { font-family: Arial, sans-serif; margin: 10px; background: #f9f9f9; }
+h2 { text-align: center; }
+input, select, button { padding: 8px; margin: 4px; font-size: 14px; }
+button { background: #2196F3; color: white; border: none; border-radius: 4px; }
+button.red { background: #e91e63; }
+table { width: 100%; border-collapse: collapse; margin-top: 10px; background: white; }
+th, td { padding: 8px; border-bottom: 1px solid #ddd; }
+tr:hover { background: #f1f1f1; }
+.row { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; }
+#debugLog { background: black; color: lime; padding: 5px; font-size: 12px; height: 120px; overflow-y: scroll; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h2>Firebase Admin</h2>
+<div class="row">
+  <input type="text" id="dbUrl" placeholder="Database URL">
+  <input type="text" id="dbSecret" placeholder="Database Secret">
+  <button onclick="saveConfig()">Simpan</button>
+</div>
+<div class="row">
+  <input type="text" id="search" placeholder="Cari..." oninput="renderData()">
+</div>
+<div class="row">
+  <button onclick="loadData()">Refresh</button>
+  <button onclick="openModal()">Tambah User</button>
+  <button class="red" onclick="deleteFiltered()">Hapus Semua Hasil</button>
+</div>
+<pre id="debugLog"></pre>
+<table>
+<thead>
+<tr>
+  <th>Index</th>
+  <th>Device Id</th>
+  <th>Username</th>
+  <th>Password</th>
+  <th>Expiry</th>
+  <th>Aksi</th>
+</tr>
+</thead>
+<tbody id="dataBody"></tbody>
+</table>
+<div id="modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);">
+<div style="background:white;margin:10% auto;padding:20px;width:90%;max-width:400px;">
+  <h3 id="modalTitle">Tambah User</h3>
+  <input type="text" id="device_id" placeholder="Device ID"><br>
+  <input type="text" id="username" placeholder="Username"><br>
+  <input type="text" id="password" placeholder="Password"><br>
+  <input type="text" id="expiry" placeholder="yyyy-mm-dd"><br>
+  <button onclick="saveUser()">Simpan</button>
+  <button onclick="closeModal()">Batal</button>
+</div>
+</div>
+<script>
+let DATABASE_URL = localStorage.getItem('dbUrl') || '';
+let DATABASE_SECRET = localStorage.getItem('dbSecret') || '';
+let allData = [];
+let editIndex = null;
+
+document.getElementById('dbUrl').value = DATABASE_URL;
+document.getElementById('dbSecret').value = DATABASE_SECRET;
+
+function log(msg){
+  let el = document.getElementById('debugLog');
+  el.textContent += msg + "\n";
+  el.scrollTop = el.scrollHeight;
+}
+
+function saveConfig(){
+  DATABASE_URL = document.getElementById('dbUrl').value.trim();
+  DATABASE_SECRET = document.getElementById('dbSecret').value.trim();
+  localStorage.setItem('dbUrl', DATABASE_URL);
+  localStorage.setItem('dbSecret', DATABASE_SECRET);
+  log("Config disimpan.");
+}
+
+function loadData(){
+  if(!DATABASE_URL) return alert("Isi Database URL!");
+  log("Memuat data...");
+  fetch(`${DATABASE_URL}.json?auth=${DATABASE_SECRET}`)
+    .then(res => res.json())
+    .then(data => {
+      allData = [];
+      if (!data) return renderData();
+      let keys = Object.keys(data);
+      keys.forEach(k => {
+        if (typeof data[k] !== 'object') return;
+        allData.push({ nodeKey: k, ...data[k] });
+      });
+      renderData();
+    })
+    .catch(err => log("Error: " + err));
+}
+
+function renderData(){
+  let search = document.getElementById('search').value.toLowerCase();
+  let tbody = document.getElementById('dataBody');
+  tbody.innerHTML = "";
+  allData.filter(item => {
+    return !search ||
+      item["Device Id"]?.toLowerCase().includes(search) ||
+      item.username?.toLowerCase().includes(search);
+  }).forEach(item => {
+    let tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${item.nodeKey}</td>
+      <td>${item["Device Id"] || '(kosong)'}</td>
+      <td>${item.username || '(kosong)'}</td>
+      <td>${item.password || '(kosong)'}</td>
+      <td>${item.expiry || '(kosong)'}</td>
+      <td>
+        <button onclick="editUser('${item.nodeKey}')">Edit</button>
+        <button class="red" onclick="delUser('${item.nodeKey}')">Hapus</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+  log("Render selesai.");
+}
+
+function openModal(){
+  document.getElementById('modal').style.display = 'block';
+  document.getElementById('modalTitle').innerText = 'Tambah User';
+  editIndex = null;
+  document.getElementById('device_id').value = '';
+  document.getElementById('username').value = '';
+  document.getElementById('password').value = '';
+  document.getElementById('expiry').value = '';
+}
+
+function closeModal(){
+  document.getElementById('modal').style.display = 'none';
+}
+
+function saveUser(){
+  let obj = {
+    "Device Id": document.getElementById('device_id').value.trim(),
+    "username": document.getElementById('username').value.trim(),
+    "password": document.getElementById('password').value.trim(),
+    "expiry": document.getElementById('expiry').value.trim()
+  };
+  if(!obj["Device Id"] || !obj.username || !obj.password || !obj.expiry) 
+    return alert("Lengkapi data!");
+
+  if(editIndex !== null){
+    fetch(`${DATABASE_URL}/${editIndex}.json?auth=${DATABASE_SECRET}`, {
+      method: "PUT",
+      body: JSON.stringify(obj)
+    }).then(() => { closeModal(); loadData(); });
+  } else {
+    let newIndex = allData.length > 0 ? Math.max(...allData.map(d => parseInt(d.nodeKey))) + 1 : 0;
+    fetch(`${DATABASE_URL}/${newIndex}.json?auth=${DATABASE_SECRET}`, {
+      method: "PUT",
+      body: JSON.stringify(obj)
+    }).then(() => { closeModal(); loadData(); });
+  }
+}
+
+function editUser(index){
+  let item = allData.find(d => d.nodeKey == index);
+  if(!item) return;
+  editIndex = index;
+  document.getElementById('modal').style.display = 'block';
+  document.getElementById('modalTitle').innerText = 'Edit User';
+  document.getElementById('device_id').value = item["Device Id"] || '';
+  document.getElementById('username').value = item.username || '';
+  document.getElementById('password').value = item.password || '';
+  document.getElementById('expiry').value = item.expiry || '';
+}
+
+function delUser(index){
+  if(!confirm("Hapus data ini?")) return;
+  fetch(`${DATABASE_URL}/${index}.json?auth=${DATABASE_SECRET}`, { method: "DELETE" })
+    .then(() => loadData());
+}
+
+function deleteFiltered(){
+  let search = document.getElementById('search').value.toLowerCase();
+  let filtered = allData.filter(item => {
+    return !search ||
+      item["Device Id"]?.toLowerCase().includes(search) ||
+      item.username?.toLowerCase().includes(search);
+  });
+  if(filtered.length === 0) return alert("Tidak ada yang cocok.");
+  if(!confirm(`Hapus ${filtered.length} data?`)) return;
+
+  Promise.all(filtered.map(item =>
+    fetch(`${DATABASE_URL}/${item.nodeKey}.json?auth=${DATABASE_SECRET}`, { method: "DELETE" })
+  )).then(() => loadData());
+}
+
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js');
+}
+</script>
+</body>
+</html>
