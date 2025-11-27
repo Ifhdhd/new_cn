@@ -1,5 +1,5 @@
 {
-  "name": "Firebase Admin Panel",
+  "name": "Admin Panel",
   "short_name": "AdminPanelNew",
   "start_url": "./index.html",
   "display": "standalone",
